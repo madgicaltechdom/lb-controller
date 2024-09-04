@@ -1,0 +1,67 @@
+name: Install AWS Load Balancer Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_name:
+        description: "Name of the script to run"
+        required: true
+        default: "lb-controller-python-script.py"
+
+jobs:
+  run-script-and-install-lb:
+    runs-on: [self-hosted, prod-runner]
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LB_CONTROLLER_IMAGE: ${{vars.LB_CONTROLLER_IMAGE}}
+    steps:
+      - name: Set permissions
+        run: sudo chmod -R 777 /home/ubuntu/actions-runner/_work/pb-api-nest
+
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.lb_controller_Role }}
+          role-session-name: GitHub-Action-Role
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+          echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Install Helm
+        run: |
+          curl -LO "https://get.helm.sh/helm-v3.15.3-linux-amd64.tar.gz"
+          tar -zxvf helm-v3.15.3-linux-amd64.tar.gz
+          sudo mv linux-amd64/helm /usr/local/bin/helm
+          helm version
+
+      - name: Install eksctl
+        run: |
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/download/v0.175.0/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+
+      - name: Run lb-controller Python script
+        run: |
+          python3 ./${{ github.event.inputs.script_name }}
