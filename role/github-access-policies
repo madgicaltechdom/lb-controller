@@ -1,0 +1,3 @@
+AWSCloudFormationFullAccess
+IAMFullAccess
+<Required access for EKS Cluster>
