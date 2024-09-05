@@ -57,10 +57,40 @@ jobs:
           sudo mv linux-amd64/helm /usr/local/bin/helm
           helm version
 
+      - name: Add Helm repo for AWS EKS
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+
       - name: Install eksctl
         run: |
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/download/v0.175.0/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
+
+      - name: Connect to EKS cluster
+        run: |
+          aws eks update-kubeconfig --name ${{vars.CLUSTER_NAME}} --region ${{ vars.AWS_REGION }}
+          cat $HOME/.kube/config
+          aws sts get-caller-identity
+
+      - name: Check if Helm release exists
+        id: check-release
+        run: |
+          RELEASE_NAME=aws-load-balancer-controller
+          NAMESPACE=kube-system
+          if helm status $RELEASE_NAME --namespace $NAMESPACE; then
+            echo "Release $RELEASE_NAME exists."
+            echo "release_exists=true" >> $GITHUB_ENV
+          else
+            echo "Release $RELEASE_NAME does not exist."
+            echo "release_exists=false" >> $GITHUB_ENV
+          fi
+
+      - name: Delete existing Helm release if it exists
+        if: env.release_exists == 'true'
+        run: |
+          helm uninstall aws-load-balancer-controller --namespace kube-system
+          echo "Helm release deleted."
 
       - name: Connect to EKS cluster
         run: |
