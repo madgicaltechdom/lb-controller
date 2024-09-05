@@ -1,6 +1,5 @@
 import os
 import subprocess
-import yaml
 
 def run_command(command):
     try:
@@ -22,7 +21,6 @@ account_id = run_command("aws sts get-caller-identity --query 'Account' --output
 region = os.environ.get("AWS_REGION")              
 policy_name = f"AWSLoadBalancerControllerIAMPolicy-{cluster_name}"
 role_name = f"AmazonEKSLoadBalancerControllerRole-{cluster_name}"
-crds_path = "aws-load-balancer-controller/crds/crds.yaml"
 lb_controller_image = os.environ.get("LB_CONTROLLER_IMAGE") 
 
 # Step 1: Check if IAM Policy exists
@@ -60,7 +58,7 @@ def create_iam_role():
 
     # Check if the service account exists
     check_sa_cmd = (
-        f"kubectl get serviceaccount aws-load-balancer-controller "
+        f"kubectl get serviceaccount aws-load-balancer-controller-{cluster_name} "
         f"--namespace=kube-system"
     )
 
@@ -84,63 +82,29 @@ def create_iam_role():
         run_command(create_iam_sa_cmd)
         print("IAM role and service account created successfully.")
 
-# Step 3: Apply CRDs
-def apply_crds():
-    print("Applying CRDs...")
-    apply_crds_cmd = ["kubectl", "apply", "-f", crds_path]
-    subprocess.run(apply_crds_cmd, check=True)
-    print("CRDs applied successfully.")
-
-# Update Image in YAML file
-def update_image_in_yaml(file_path, container_name, new_image):
-    print(f"Updating image for container '{container_name}' in {file_path}...")
-    # Load all YAML documents from the file
-    with open(file_path, 'r') as file:
-        documents = list(yaml.safe_load_all(file))
-
-    # Find and update the relevant document (e.g., Deployment)
-    for doc in documents:
-        if isinstance(doc, dict) and doc.get('kind') == 'Deployment':
-            if 'spec' in doc and 'template' in doc['spec']:
-                containers = doc['spec']['template']['spec'].get('containers', [])
-                for container in containers:
-                    if container.get('name') == container_name:
-                        container['image'] = new_image
-                        print(f"Updated image to {new_image} in {file_path}")
-                        break
-
-    # Write all documents back to the file
-    with open(file_path, 'w') as file:
-        yaml.safe_dump_all(documents, file, default_flow_style=False)
-
-    print(f"Updated {file_path} with new image: {new_image}")
-
-# Step 4: Install AWS Load Balancer Controller
+# Step 3: Install AWS Load Balancer Controller using Helm
 def install_lb_controller():
     print("Installing AWS Load Balancer Controller...")
 
-    # Fetching the Helm template and saving it to aws-load-balancer-controller.yaml
     helm_command = (
-        f"helm template aws-load-balancer-controller aws-load-balancer-controller "
+        f"helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller "
         f"--namespace kube-system "
+        f"--version 1.5.5 "
         f"--set clusterName={cluster_name} "
         f"--set serviceAccount.create=false "
         f"--set serviceAccount.name=aws-load-balancer-controller-{cluster_name} "
-        f"--wait > aws-load-balancer-controller.yaml"
+        f"--set image.repository={lb_controller_image} " 
+        f"--set image.tag=aws-alb-controller-v2.5.4 "  # This line will ensure the private ECR image is used
+        f"--set region={region} "
+        f"--set awsVpcID=vpc-00be237934c6972a4 " 
+        f"--wait"
     )
 
     run_command(helm_command)
-
-    # Update the image in the YAML file
-    update_image_in_yaml("aws-load-balancer-controller.yaml", "aws-load-balancer-controller", lb_controller_image)
-
-    # Applying the generated YAML to the cluster
-    apply_lb_controller_cmd = ["kubectl", "apply", "-f", "aws-load-balancer-controller.yaml"]
-    subprocess.run(apply_lb_controller_cmd, check=True)
     
     print("AWS Load Balancer Controller installed successfully.")
 
-# Step 5: Verify Installation
+# Step 4: Verify Installation
 def verify_installation():
     print("Verifying AWS Load Balancer Controller installation...")
     verify_cmd = ["kubectl", "get", "deployment", "aws-load-balancer-controller", "-n", "kube-system"]
@@ -150,7 +114,6 @@ def verify_installation():
 if __name__ == "__main__":
     create_iam_policy()
     create_iam_role()
-    apply_crds()
     install_lb_controller()
     verify_installation()
     print("AWS Load Balancer Controller setup completed successfully.")
