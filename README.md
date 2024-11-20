@@ -76,10 +76,26 @@ kubectl get ingress
 
 1. If you want to install the latest version of AWS Load Balancer Controller, follow these steps:
 
-2. Install the latest AWS Load Balancer Controller Helm chart on your local system and replace the aws-load-balancer-controller directory in your repository with the latest one.
-   Update the version in the iam_policy_url within the lb-controller-python-script.py file.
+   - Install the latest AWS load balancer controller Helm chart on your local system and replace the latest AWS load balancer controller directory in your repository with the latest one.
+   - Update the version in the iam_policy_url within the lb-controller-python-script.py file.
+   - Run the workflow.
 
-3. Run the workflow.
+2. If you want the load balancer controller pods should run on a specific Node Group then add Node Affinity on the deployment file:
+
+   ```
+   spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: DoesNotExist
+              - key: karpenter/nodegroup
+                operator: In
+                values:
+                - <NODE_GROUP_NAME>
+   ```
 
 ## Conclusion
 
